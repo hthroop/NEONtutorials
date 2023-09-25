@@ -1493,3 +1493,16 @@ points(centroids$easting,centroids$northing, pch=0, cex = 2 )
 points(vegStr$easting,vegStr$northing, pch=19, cex=.5, col = 2)
 
 ```
+
+```{r}
+## create SPDF: SpatialPointsDataFrame()
+# specify the easting (column 4) & northing (columns 3) in that order
+# specify CRS proj4string: borrow CRS from chm 
+# specify raster
+centroid_spdf <- SpatialPointsDataFrame(
+  centroids[,4:3], proj4string=chm@crs, centroids)
+
+# check centroid CRS
+# note SPDFs don't have a crs slot so `object@crs` won't work
+centroid_spdf
+```
