@@ -1,0 +1,1495 @@
+---
+title: "NEON Tutorials"
+author: "Heather Throop"
+format: html
+editor: visual
+editor_options: 
+  chunk_output_type: console
+---
+
+## Time Series Tutorial
+
+https://www.neonscience.org/resources/learning-hub/tutorials/introduction-working-time-series-data-text-formats-r#toggle-0
+
+### Time Series 00
+
+```{r}
+library(tidyverse)
+library(scales)
+library(gridExtra)
+library(ggthemes)
+library(reshape2)
+library(zoo)
+library(here)
+library(EML) #note that tutorial indicates it is not yet on CRAN, but I was able to get it
+library(ggmap)
+library(lubridate)
+
+```
+
+Load the Harvard Forest Daily Met Data
+
+```{r}
+harMet.daily <- read_csv(here("NEON-DS-Met-Time-Series", "HARV", "FisherTower-Met", "hf001-06-daily-m.csv"))
+```
+
+Explore df structure
+
+```{r}
+head(harMet.daily)
+tail(harMet.daily)
+str(harMet.daily)
+```
+
+quickly plot air temperature
+
+```{r}
+qplot(x=date, y=airt, 
+      data=harMet.daily,
+      main="Daily Air Temperature\nNEON Harvard Forest Field Site")
+
+```
+
+Note that I did not need to change date data to date class - I think due to using read_csv rather than read.csv (??)
+
+#### 
+
+Challenge: Using ggplot2's qplot function
+
+1.  Create a quick plot of the precipitation. Use the full time frame of data available in the `harMet.daily` object.
+
+```{r}
+qplot(x=date, y=prec, 
+      data=harMet.daily,
+      main="Daily Precipitation\nNEON Harvard Forest Field Site")
+
+```
+
+1.  
+
+2.  Do precipitation and air temperature have similar annual patterns?\
+    NOPE!
+
+3.  Create a quick plot examining the relationship between air temperature and precipitation.\
+    \
+    Hint: you can modify the X and Y axis labels using `xlab="label text"` and `ylab="label text"`.
+
+```{r}
+qplot(x=airt, y=prec, 
+      data=harMet.daily,
+      main="Daily Precipitation v Air Temp\nNEON Harvard Forest Field Site")
+```
+
+### Time Series 01
+
+https://www.neonscience.org/resources/learning-hub/tutorials/introduction-working-time-series-data-text-formats-r#toggle-10
+
+Import EML data from Harvard Forest web site
+
+```{r}
+# NOTE THAT TUTORIAL LINKS AND URL DID NOT WORK
+#eml_HARV <- read_eml("https://harvardforest1.fas.harvard.edu/sites/harvardforest.fas.harvard.edu/files/data/eml/hf001.xml")
+
+# THIS SEEMS TO WORK
+eml_HARV <- read_eml("https://harvardforest1.fas.harvard.edu/data/eml/hf001.xml")
+
+# But this doesn't work (this is supposed to be an abbreviated eml file)
+eml_HARV <- read_eml("http://neonscience.github.io/NEON-R-Tabular-Time-Series/hf001-revised.xml"
+```
+
+```{r}
+# view size of object
+object.size(eml_HARV)
+
+class(eml_HARV)
+```
+
+Explore data
+
+```{r}
+eml_HARV$dataset$creator
+```
+
+```{r}
+eml_HARV$dataset$methods
+```
+
+Get the coordinates and map the location
+
+```{r}
+# grab x coordinate from the coverage information
+XCoord <- eml_HARV$dataset$coverage$geographicCoverage$boundingCoordinates$westBoundingCoordinate[[1]]
+# grab y coordinate from the coverage information
+YCoord <- eml_HARV$dataset$coverage$geographicCoverage$boundingCoordinates$northBoundingCoordinate[[1]]
+# make a map and add the xy coordinates to it
+# seems like geocode_OSM is required, but it not available for this version of R
+ggmap(get_stamenmap(rbind(as.numeric(paste(geocode_OSM("Massachusetts")$bbox))), zoom = 11, maptype=c("toner")), extent=TRUE) + geom_point(aes(x=as.numeric(XCoord),y=as.numeric(YCoord)), 
+             color="darkred", size=6, pch=18)
+```
+
+### Time Series 02 - as.Date, POSIXct, POSIXlt
+
+Load HF data
+
+```{r}
+harMet_15Min <- read_csv(here("NEON-DS-Met-Time-Series","HARV/FisherTower-Met","hf001-10-15min-m.csv"))
+```
+
+```{r}
+class(harMet_15Min$datetime)
+```
+
+```{r}
+head(harMet_15Min$datetime)
+```
+
+```{r}
+# view one date-time field
+harMet_15Min$datetime[1]
+```
+
+```{r}
+# convert single instance of date/time in format year-month-day hour:min:sec
+as.POSIXct(harMet_15Min$datetime[1],format="%Y-%m-%dT%H:%M")
+```
+
+```{r}
+## The format of date-time MUST match the specified format or the data will not
+# convert; see what happens when you try it a different way or without the "T"
+# specified
+as.POSIXct(harMet_15Min$datetime[1],format="%d-%m-%Y%H:%M")
+```
+
+```{r}
+new.date.time <- as.POSIXct(harMet_15Min$datetime,
+                            format="%Y-%m-%dT%H:%M" #format time
+                            )
+
+# view output
+head(new.date.time)
+```
+
+```{r}
+class(new.date.time)
+```
+
+Define the time zone (so that it doesn't default to the computer)
+
+```{r}
+harMet_15Min$datetime <- as.POSIXct(harMet_15Min$datetime,
+                                format = "%Y-%m-%dT%H:%M",
+                                tz = "America/New_York")
+```
+
+```{r}
+str(harMet_15Min$datetime)
+```
+
+### Time Series 03 - Cleaning & Subsetting
+
+Subset the dataset into a two year period of interest
+
+```{r}
+# subset data - 2009-2011
+harMet15.09.11 <- subset(harMet_15Min,
+                         datetime >= as.POSIXct('2009-01-01 00:00',
+                                                tz = "America/New_York") &
+                         datetime <= as.POSIXct('2011-12-31 23:59',
+                                               tz = "America/New_York"))
+```
+
+```{r}
+# View first records in the object 
+head(harMet15.09.11[1])
+```
+
+```{r}
+# View last records in the object 
+tail(harMet15.09.11[1])
+```
+
+\### Challenge: Subset & Plot Data
+
+Create a plot of precipitation for the month of July 2010 in Harvard Forest. Be sure to label x and y axes. Also be sure to give your plot a title.
+
+```{r}
+# subset data - 2010
+harMet.July2010 <- subset(harMet_15Min,
+                         datetime >= as.POSIXct('2010-07-01 00:00',
+                                                tz = "America/New_York") &
+                         datetime <= as.POSIXct('2010-07-31 23:59',
+                                               tz = "America/New_York"))
+```
+
+```{r}
+harMet.July2010 |>
+  ggplot(aes(x = datetime, y = prec)) +
+  geom_point() +
+  ggtitle("July 2010 Precip at Harvard Forest")
+```
+
+Create a plot of dew point (`dewp`) for the year 2011 at Harvard Forest.
+
+```{r}
+# subset data - 2011
+harMet.2011 <- subset(harMet_15Min,
+                         datetime >= as.POSIXct('2011-01-01 00:00',
+                                                tz = "America/New_York") &
+                         datetime <= as.POSIXct('2011-12-31 23:59',
+                                               tz = "America/New_York"))
+```
+
+```{r}
+harMet.2011 |>
+  ggplot(aes(x = datetime, y = dewp)) +
+  geom_line() +
+  ggtitle("2011 Dew Point at Harvard Forest")
+```
+
+Check for NA values
+
+```{r}
+# Check for NA values
+sum(is.na(harMet15.09.11$datetime))
+```
+
+```{r}
+sum(is.na(harMet15.09.11$airt))
+```
+
+```{r}
+# view rows where the air temperature is NA 
+harMet15.09.11[is.na(harMet15.09.11$airt),]
+```
+
+\### Challenge: Import, Understand Metadata, and Clean a Data Set We have been using the 15-minute data from the Harvard Forest. However, overall we are interested in larger scale patterns of greening-up and browning-down. Thus a daily summary is sufficient for us to see overall trends.
+
+1.  Check the metadata to see what the column names are for the variable of interest (precipitation, air temperature, PAR, day and time ).
+
+    ```{r}
+    glimpse(harMet.daily)
+    ```
+
+2.  If needed, convert the data class of different columns.
+
+    ```{r}
+    # already converted with as.date earlier
+    ```
+
+3.  Check for missing data and decide what to do with any that exist.
+
+4.  Subset out the data for the duration of our study: 2009-2011. Name the object "harMetDaily.09.11".
+
+    ```{r}
+    # subset data - 2011
+    harMetDaily.09.11 <- subset(harMet.daily,
+                             date >= ('2009-01-01') &
+                             date <= ('2011-12-31'))
+    ```
+
+5.  Export the subset to a `.csv` file.
+
+6.  Create a plot of Daily Air Temperature for 2009-2011. Be sure to label, x-and y-axes. Also give the plot a title!
+
+    ```{r}
+    harMetDaily.09.11 |>
+      ggplot(aes(x = date, y = airt)) +
+      geom_point() +
+      ggtitle("2009-2011 Daily Air Temperature at Harvard Forest")
+    ```
+
+### Time Series 04 - Subset and Manipulate
+
+Extract Year from a Date-Time Column
+
+```{r}
+# create a year column
+harMet15.09.11$year <- year(harMet15.09.11$datetime)
+```
+
+```{r}
+# check to make sure it worked
+names(harMet15.09.11)
+```
+
+Manipulate with dplyr
+
+Skipped over summarizing as it is more efficiently done with pipes
+
+```{r}
+harMet15.09.11 |> 
+  group_by(year) |> 
+  summarize(
+    mean(airt, na.rm = TRUE))
+```
+
+\### Challenge: Using Pipes Use piping to create a \`data_frame\` called \`jday.avg\` that contains the average \`airt\` per Julian day (\`harMet15.09.11\$jd\`). Plot the output using \`qplot\`.\
+
+```{r}
+harMet15.09.11 |> 
+  group_by(jd) |> 
+  summarize(
+    airt = mean(airt, na.rm = TRUE)) |>
+  ggplot(aes(x = jd, y = airt)) +
+     geom_point() +
+     ggtitle("2009-2011 Daily Air Temperature at Harvard Forest")
+```
+
+```{r}
+harMet15.09.11 |>         # use the harMet15.09.11 data_frame
+  group_by(year, jd) |>   # group data by Year & Julian day
+  summarize(mean_airt = mean(airt, na.rm = TRUE))  # mean airtemp per jd / year
+```
+
+\### Challenge: Summarization & Calculations with dplyr We can use \`sum\` to calculate the total rather than mean value for each Julian Day. Using this information, do the following:
+
+1.  Calculate total `prec` for each Julian Day over the 3 years - name your data_frame `total.prec`.
+
+2.  Create a plot of Daily Total Precipitation for 2009-2011.
+
+3.  Add a title and x and y axis labels.
+
+```{r}
+total.prec <- harMet15.09.11 |>         # use the harMet15.09.11 data_frame
+  group_by(year, jd) |>   # group data by Year & Julian day
+  summarise(prec = sum(prec, na.rm = TRUE))   # sum precip per jd / year
+
+```
+
+```{r}
+total.prec$year <- as.factor(total.prec$year)
+
+total.prec |>
+  ggplot(aes(x = jd, y = prec)) +
+  geom_point(aes(color = year))
+```
+
+```{r}
+harTemp.daily.09.11 <- harMet15.09.11 |>
+  mutate(year2 = year(datetime)) |>
+  group_by(year2, jd) |>
+  summarize(mean_airt = mean(airt, na.rm = TRUE))
+```
+
+add a datetime column while summarizing across dates
+
+```{r}
+# add in a datatime column
+harTemp.daily.09.11 <- harMet15.09.11 |>
+  mutate(year3 = year(datetime)) |>
+  group_by(year3, jd) |>
+  summarize(mean_airt = mean(airt, na.rm = TRUE), datetime = first(datetime))
+```
+
+Create a data_frame of the average *monthly* air temperature for 2009-2011. Name the new data frame `harTemp.monthly.09.11`. Plot your output.
+
+```{r}
+# montly air temperature
+harTemp.monthly.09.11 <- harMet15.09.11 |>
+  mutate(year = year(datetime)) |>
+  mutate(month = month(datetime)) |>
+  group_by(year, month) |>
+  summarize(mean_airt = mean(airt, na.rm = TRUE), datetime = first(datetime))
+```
+
+```{r}
+harTemp.monthly.09.11 |>
+  ggplot(aes(x = datetime, y = mean_airt)) +
+  geom_point()
+```
+
+### Time Series 05 - ggplot
+
+I skipped through the first bit...
+
+```{r}
+# plot Air Temperature Data across 2009-2011 using daily data
+AirTempDaily <- ggplot(harMetDaily.09.11, aes(date, airt)) +
+           geom_point(na.rm=TRUE, color="purple", size=1) + 
+           ggtitle("Air Temperature\n 2009-2011\n NEON Harvard Forest") +
+           xlab("Date") + ylab("Air Temperature (C)") 
+
+# render the plot
+AirTempDaily
+```
+
+adjust the axes - just add element to the existing plot rather than recoding
+
+```{r}
+AirTempDailyb <- AirTempDaily + 
+  (scale_x_date(labels=date_format("%b %y")))
+
+AirTempDailyb
+```
+
+Use scale_x_date to change the frequency of the x-axis ticks
+
+```{r}
+AirTempDaily_6mo <- AirTempDaily + 
+    (scale_x_date(breaks=date_breaks("6 months"),
+      labels=date_format("%b %y")))
+
+AirTempDaily_6mo
+```
+
+Subset time span withing ggplot (showing part of the data, not subsetting the dataframe)
+
+```{r}
+# Define Start and end times for the subset as R objects that are the time class
+startTime <- as.Date("2011-01-01")
+endTime <- as.Date("2012-01-01")
+
+# create a start and end time R object
+start.end <- c(startTime,endTime)
+start.end
+
+## [1] "2011-01-01" "2012-01-01"
+
+# View data for 2011 only
+# We will replot the entire plot as the title has now changed.
+AirTempDaily_2011 <- ggplot(harMetDaily.09.11, aes(date, airt)) +
+           geom_point(na.rm=TRUE, color="purple", size=1) + 
+           ggtitle("Air Temperature\n 2011\n NEON Harvard Forest") +
+           xlab("Date") + ylab("Air Temperature (C)")+ 
+           (scale_x_date(limits=start.end,
+                             breaks=date_breaks("1 year"),
+                             labels=date_format("%b %y")))
+
+AirTempDaily_2011
+```
+
+ggplot themes
+
+```{r}
+AirTempDaily_1y <- AirTempDaily + 
+    (scale_x_date(breaks=date_breaks("1 year"),
+      labels=date_format("%b %y")))
+
+AirTempDaily_1y
+```
+
+```{r}
+# Apply a black and white stock ggplot theme
+AirTempDaily_bw<-AirTempDaily_1y +
+  theme_bw()
+
+AirTempDaily_bw
+```
+
+![]()
+
+```{r}
+PrecipDailyBarA <- ggplot(harMetDaily.09.11, aes(date, prec)) +
+    geom_bar(stat="identity", na.rm = TRUE) +
+    ggtitle("Daily Precipitation\n Harvard Forest") +
+    xlab("Date") + ylab("Precipitation (mm)") +
+    scale_x_date(labels=date_format ("%b %y"), breaks=date_breaks("1 year")) +
+    theme(plot.title = element_text(lineheight=.8, face="bold", size = 20)) +
+    theme(text = element_text(size=18))
+
+PrecipDailyBarA
+```
+
+\### Challenge: Plot with scale_x_data() Without creating a subsetted dataframe, plot the precipitation data for \*2010 only\*. Customize the plot with:
+
+-   a descriptive title and axis labels,
+
+-   breaks every 4 months, and
+
+-   x-axis labels as only the full month (spelled out).
+
+    HINT: you will need to rebuild the precipitation plot as you will have to specify a new `scale_x_data()` element.\
+    Bonus: Style your plot with a `ggtheme` of choice.
+
+```{r}
+# Define Start and end times for the subset as R objects that are the time class
+startTime1 <- as.Date("2010-01-01")
+endTime1 <- as.Date("2011-01-01")
+
+# create a start and end time R object
+start.end1 <- c(startTime1,endTime1)
+start.end1
+
+# View data for 2010 only
+PrecipDailyBar_2010 <- ggplot(harMetDaily.09.11, aes(date, prec)) +
+    geom_bar(stat="identity", na.rm = TRUE) +
+    ggtitle("Daily Precipitation\n Harvard Forest") +
+    xlab("Date") + ylab("Precipitation (mm)") +
+    (scale_x_date(limits=start.end1,
+                             breaks=date_breaks("4 month"),
+                             labels=date_format("%B"))) +
+    theme(plot.title = element_text(lineheight=.8, face="bold", size = 20)) +
+    theme(text = element_text(size=18))
+
+PrecipDailyBar_2010
+
+```
+
+```{r}
+AirTempDaily_line <- ggplot(harMetDaily.09.11, aes(date, airt)) +
+           geom_line(na.rm=TRUE) +  
+           ggtitle("Air Temperature Harvard Forest\n 2009-2011") +
+           xlab("Date") + ylab("Air Temperature (C)") +
+           scale_x_date(labels=date_format ("%b %y")) +
+           theme(plot.title = element_text(lineheight=.8, face="bold", 
+                                          size = 20)) +
+           theme(text = element_text(size=18))
+
+AirTempDaily_line
+```
+
+\### Challenge: Combine Points & Lines You can combine geometries within one plot. For example, you can have a \`geom_line()\` and \`geom_point\` element in a plot. Add \`geom_line(na.rm=TRUE)\` to the \`AirTempDaily\`, a \`geom_point\` plot. What happens?
+
+```{r}
+AirTempDailyc <- AirTempDaily +
+  geom_line(na.rm=TRUE)
+AirTempDailyc 
+```
+
+```{r}
+# adding on a trend lin using loess (**NOTE THAT THIS IS REALLY GAM - NEON tutorial indicates loess)
+AirTempDaily_trend <- AirTempDaily + stat_smooth(colour="green")
+
+AirTempDaily_trend
+```
+
+```{r}
+# This is loess
+AirTempDaily_trend1 <- AirTempDaily + stat_smooth(colour="green", method = "loess")
+
+AirTempDaily_trend1
+```
+
+\### Challenge: A Trend in Precipitation?
+
+Create a bar plot of total daily precipitation. Add a:
+
+-   Trend line for total daily precipitation.
+
+-   Make the bars purple (or your favorite color!).
+
+-   Make the trend line grey (or your other favorite color).
+
+-   Adjust the tick spacing and format the dates to appear as "Jan 2009".
+
+-   Render the title in *italics*.
+
+```{r}
+
+PrecipDailyBar_trend <- ggplot(harMetDaily.09.11, aes(date, prec)) +
+    geom_bar(stat="identity", na.rm = TRUE, color = "purple") +
+    ggtitle("Daily Precipitation\n Harvard Forest") +
+    xlab("Date") + ylab("Precipitation (mm)") +
+    (scale_x_date(
+      breaks=date_breaks("4 month"),
+      labels=date_format("%b %Y" ))) +
+    stat_smooth(color = "gray")
+    theme(plot.title = element_text(lineheight=.8, size = 20)) +
+    theme(plot.title=element_text(face="italic"))
+    theme(text = element_text(size=18))
+PrecipDailyBar_trend
+```
+
+### Time Series 06 - Facet Grids
+
+```{r}
+AirTempDaily <- ggplot(harMetDaily.09.11, aes(date, airt)) +
+           geom_point() +
+           ggtitle("Daily Air Temperature\n NEON Harvard Forest\n 2009-2011") +
+           xlab("Date") + ylab("Temperature (C)") +
+           scale_x_date(labels=date_format ("%m-%y"))+
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+AirTempDaily
+```
+
+add year column with lubridate
+
+```{r}
+# add year column to daily values
+harMetDaily.09.11$year <- year(harMetDaily.09.11$date)
+
+```
+
+Facet by year
+
+```{r}
+# run this code to plot the same plot as before but with one plot per season
+AirTempDaily + facet_grid(. ~ year)
+```
+
+Plot instead by Julian date rather than datetime
+
+```{r}
+AirTempDaily_jd <- ggplot(harMetDaily.09.11, aes(jd, airt)) +
+           geom_point() +
+           ggtitle("Air Temperature\n NEON Harvard Forest Field Site") +
+           xlab("Julian Day") + ylab("Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+# create faceted panel
+AirTempDaily_jd + facet_grid(. ~ year)
+```
+
+```{r}
+# move labels to the RIGHT and stack all plots
+AirTempDaily_jd + facet_grid(year ~ .)
+```
+
+Facet Wrap
+
+```{r}
+# display in two columns
+AirTempDaily_jd + facet_wrap(~year, ncol = 2)
+```
+
+Relationships between two variables
+
+```{r}
+airSoilTemp_Plot <- ggplot(harMetDaily.09.11, aes(airt, s10t)) +
+           geom_point() +
+           ggtitle("Air vs. Soil Temperature\n NEON Harvard Forest Field Site\n 2009-2011") +
+           xlab("Air Temperature (C)") + ylab("Soil Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+airSoilTemp_Plot
+```
+
+```{r}
+# create faceted panel
+airSoilTemp_Plot + facet_grid(year ~ .)
+```
+
+\### Challenge: Faceted Plot
+
+Create a faceted plot of air temperature vs soil temperature by *month* rather than year.
+
+HINT: To create this plot, you will want to add a month column to our `data_frame`. We can use lubridate `month` in the same way we used `year` to add a year column.
+
+```{r}
+harMetDaily.09.11$datetime <- as.POSIXct(harMetDaily.09.11$date)
+
+
+# create a month column
+harMetDaily.09.11$month <- month(harMetDaily.09.11$datetime)
+
+airSoilTemp_Plot <- ggplot(harMetDaily.09.11, aes(airt, s10t)) +
+           geom_point() +
+           ggtitle("Air vs. Soil Temperature\n NEON Harvard Forest Field Site\n 2009-2011") +
+           xlab("Air Temperature (C)") + ylab("Soil Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+airSoilTemp_Plot  + facet_wrap(~month, ncol = 3)
+```
+
+Change month to a name rather than number
+
+```{r}
+# add text month name column
+harMetDaily.09.11$month_name <- format(harMetDaily.09.11$date,"%B")
+
+# recreate plot
+airSoilTemp_Plot <- ggplot(harMetDaily.09.11, aes(airt, s10t)) +
+           geom_point() +
+           ggtitle("Air vs. Soil Temperature \n NEON Harvard Forest Field Site\n 2009-2011") +
+            xlab("Air Temperature (C)") + ylab("Soil Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+# create faceted panel
+airSoilTemp_Plot + facet_wrap(~month_name, nc=3)
+
+```
+
+Change months to factors and order properly
+
+```{r}
+# order the factors
+harMetDaily.09.11$month_name = factor(harMetDaily.09.11$month_name, 
+                                      levels=c('January','February','March',
+                                               'April','May','June','July',
+                                               'August','September','October',
+                                               'November','December'))
+```
+
+```{r}
+# recreate plot
+airSoilTemp_Plot <- ggplot(harMetDaily.09.11, aes(airt, s10t)) +
+           geom_point() +
+           ggtitle("Air vs. Soil Temperature \n NEON Harvard Forest Field Site\n 2009-2011") +
+            xlab("Air Temperature (C)") + ylab("Soil Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+# create faceted panel
+airSoilTemp_Plot + facet_wrap(~month_name, nc=3)
+
+```
+
+Subset by Season
+
+```{r}
+harMetDaily.09.11 <- harMetDaily.09.11 |>
+  mutate(season = 
+           ifelse(month %in% c(12, 1, 2), "Winter",
+           ifelse(month %in% c(3, 4, 5), "Spring",
+           ifelse(month %in% c(6, 7, 8), "Summer",
+           ifelse(month %in% c(9, 10, 11), "Fall", "Error")))))
+
+
+# check to see if this worked
+head(harMetDaily.09.11$month)
+
+head(harMetDaily.09.11$season)
+
+tail(harMetDaily.09.11$month)
+
+tail(harMetDaily.09.11$season)
+
+```
+
+```{r}
+# recreate plot
+airSoilTemp_Plot <- ggplot(harMetDaily.09.11, aes(airt, s10t)) +
+           geom_point() +
+           ggtitle("Air vs. Soil Temperature\n 2009-2011\n NEON Harvard Forest Field Site") +
+            xlab("Air Temperature (C)") + ylab("Soil Temperature (C)") +
+           theme(plot.title = element_text(lineheight=.8, face="bold",
+                 size = 20)) +
+           theme(text = element_text(size=18))
+
+# run this code to plot the same plot as before but with one plot per season
+airSoilTemp_Plot + facet_grid(. ~ season)
+
+```
+
+\### Challenge: Create Plots by Season The goal of this challenge is to create plots that show the relationship between air and soil temperature across the different seasons with seasons arranged in an ecologically meaningful order.
+
+Create a *factor* class season variable by converting the season column that we just created to a factor, then organize the seasons chronologically as follows: Winter, Spring, Summer, Fall.
+
+Create a new faceted plot that is 2 x 2 (2 columns of plots). HINT: One can neatly plot multiple variables using facets as follows: `facet_grid(variable1 ~ variable2)`.
+
+Create a plot of air vs soil temperature grouped by year and season.
+
+```{r}
+# order the factors
+harMetDaily.09.11$season = factor(harMetDaily.09.11$season, 
+                                      levels=c('Winter','Spring','Summer',
+                                               'Fall'))
+```
+
+```{r}
+# 2 x 2 grid
+airSoilTemp_Plot + facet_wrap(~season, nc=2)
+```
+
+```{r}
+# 2 x 2 grid
+airSoilTemp_Plot + facet_grid(year ~ season)
+```
+
+\### Challenge: Convert Year-Month Data The goal of this challenge is to use both the base R and the \`zoo\` package methods for working with year-month data.
+
+Load the `NEON-DS-Met-Time-Series/HARV/FisherTower-Met/hf001-04-monthly-m.csv` file and give it the name `met_monthly_HARV`. Then:
+
+1.  Convert the date field into a date/time class using both base R and the `zoo` package. Name the new fields `date_base` and `ymon_zoo` respectively.
+
+2.  Look at the format and check the class of both new date fields.
+
+3.  Convert the `ymon_zoo` field into a new Date class field (`date_zoo`) so it can be used in base R, ggplot, etc.
+
+```{r}
+met_monthly_HARV <- read_csv(here("NEON-DS-Met-Time-Series", "HARV", "FisherTower-Met", "hf001-04-monthly-m.csv"))
+```
+
+```{r}
+# base R
+met_monthly_HARV$date_base <- as.Date(paste(met_monthly_HARV$date,"-01", sep=""))
+# zoo
+met_monthly_HARV$ymon_zoo <- as.Date(as.yearmon(met_monthly_HARV$date))
+met_monthly_HARV$date_zoo <- as.POSIXct(met_monthly_HARV$ymon_zoo)
+```
+
+## The Relationship Between Raster Resolution, Spatial Extent & Number of Pixels
+
+```{r}
+library(rgdal)
+library(raster)
+library(here)
+library(terra)
+library(tidyverse)
+```
+
+```{r}
+here()
+
+# Load raster in an R object called 'DEM'
+DEM <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalTerrainModel" , "SJER2013_DTM.tif")))  
+
+# View raster attributes 
+DEM
+
+# View the extent of the raster (which was already listed in the above command)
+DEM@extent
+```
+
+```{r}
+#| label: spatial-extent
+
+# create a raster from the matrix - a "blank" raster of 4x4
+myRaster1 <- raster(nrow=4, ncol=4)
+
+# assign "data" to raster: 1 to n based on the number of cells in the raster
+myRaster1[]<- 1:ncell(myRaster1)
+
+# view attributes of the raster
+myRaster1
+
+# is the CRS defined?
+myRaster1@crs
+
+## CRS arguments: +proj=longlat +datum=WGS84 +no_defs
+
+# what is the raster extent?
+myRaster1@extent
+
+# plot raster
+plot(myRaster1, main="Raster with 16 pixels")
+```
+
+```{r}
+#| label: increase-resolution
+# Create 32 pixel raster (HT: ??? shouldn't this be a 64 pixel raster?)
+myRaster2 <- raster(nrow=8, ncol=8)
+
+# resample 16 pix raster with 32 pix raster
+# use bilinear interpolation with our numeric data
+myRaster2 <- resample(myRaster1, myRaster2, method='bilinear')
+
+# notice new dimensions, resolution, & min/max 
+myRaster2
+
+# plot 
+plot(myRaster2, main="Raster with 32 pixels") # HT: I'm still confused why not 64 pixels
+```
+
+```{r}
+#| label: lower-resolution
+myRaster3 <- raster(nrow=2, ncol=2)
+myRaster3 <- resample(myRaster1, myRaster3, method='bilinear')
+myRaster3
+
+plot(myRaster3, main="Raster with 4 pixels")
+```
+
+```{r}
+#| label: single-pixel-raster
+
+myRaster4 <- raster(nrow=1, ncol=1)
+myRaster4 <- resample(myRaster1, myRaster4, method='bilinear')
+myRaster4
+
+plot(myRaster4, main="Raster with 1 pixel")
+
+```
+
+```{r}
+# change graphical parameter to 2x2 grid
+par(mfrow=c(2,2))
+
+# arrange plots in order you wish to see them
+plot(myRaster2, main="Raster with 32 pixels")
+plot(myRaster1, main="Raster with 16 pixels")
+plot(myRaster3, main="Raster with 4 pixels")
+plot(myRaster4, main="Raster with 1 pixels") # changed from "Raster with 2 pixels"
+
+# change graphical parameter back to 1x1 
+par(mfrow=c(1,1))
+```
+
+```{r}
+# create an object with all ESPG codes
+epsg = make_EPSG()
+
+# use View(espg) to see the full table - doesn't render on website well
+View(epsg)
+
+# View top 5 entries
+head(epsg, 5)
+```
+
+```{r}
+# create 10x20 matrix with values 1-8. 
+newMatrix  <- (matrix(1:8, nrow = 10, ncol = 20))
+
+# convert to raster
+rasterNoProj <- raster(newMatrix)
+rasterNoProj
+```
+
+```{r}
+## Define the xmin and ymin (the lower left hand corner of the raster)
+
+# 1. define xMin & yMin objects.
+xMin = 254570
+yMin = 4107302
+
+# 2. grab the cols and rows for the raster using @ncols and @nrows
+rasterNoProj@ncols
+
+rasterNoProj@nrows
+
+# 3. raster resolution
+res <- 1.0
+
+# 4. add the numbers of cols and rows to the x,y corner location, 
+# result = we get the bounds of our raster extent. 
+xMax <- xMin + (rasterNoProj@ncols * res)
+yMax <- yMin + (rasterNoProj@nrows * res)
+
+# 5.create a raster extent class
+rasExt <- extent(xMin,xMax,yMin,yMax)
+rasExt
+
+# 6. apply the extent to our raster
+rasterNoProj@extent <- rasExt
+
+# Did it work? 
+rasterNoProj
+
+# or view extent only
+rasterNoProj@extent
+
+# plot new raster
+plot(rasterNoProj, main="Raster in UTM coordinates, 1 m resolution")
+```
+
+```{r}
+# view CRS from raster of interest
+rasterNoProj@crs
+
+## CRS arguments: NA
+
+# view the CRS of our DEM object.
+DEM@crs
+
+## CRS arguments:
+##  +proj=utm +zone=11 +datum=WGS84 +units=m +no_defs
+
+# define the CRS using a CRS of another raster
+rasterNoProj@crs <- DEM@crs
+
+# look at the attributes
+rasterNoProj
+
+# view just the crs
+rasterNoProj@crs
+
+## CRS arguments:
+##  +proj=utm +zone=11 +datum=WGS84 +units=m +no_defs
+```
+
+```{r}
+#| label: reproject-data
+
+## RETURNS ERROR: Error in if (x@srs != "") { : missing value where TRUE/FALSE needed
+# reproject raster data from UTM to CRS of Lat/Long WGS84
+reprojectedData1 <- projectRaster(rasterNoProj, 
+                                 crs="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ")
+
+# note that the extent has been adjusted to account for the NEW crs
+reprojectedData1@crs
+
+## CRS arguments: +proj=longlat +datum=WGS84 +no_defs
+
+reprojectedData1@extent
+
+
+# note the range of values in the output data
+reprojectedData1
+
+
+# use nearest neighbor interpolation method to ensure that the values stay the same
+reprojectedData2 <- projectRaster(rasterNoProj, 
+                                 crs="+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs ", 
+                                 method = "ngb")
+
+
+# note that the min and max values have now been forced to stay within the same range.
+reprojectedData2
+
+```
+
+## Raster Data in R - The Basics
+
+https://www.neonscience.org/resources/learning-hub/tutorials/raster-data-r
+
+```{r}
+library(rgdal)
+library(raster)
+library(here)
+library(terra)
+library(tidyverse)
+```
+
+```{r}
+# Load raster in an R object called 'DEM'
+DEM <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalTerrainModel" , "SJER2013_DTM.tif")))  
+
+# View raster attributes 
+DEM
+```
+
+```{r}
+# calculate and save the min and max values of the raster to the raster object
+DEM <- setMinMax(DEM)
+
+# view raster attributes
+DEM
+
+#Get min and max cell values from raster
+#NOTE: this code may fail if the raster is too large
+cellStats(DEM, min)
+
+cellStats(DEM, max)
+
+cellStats(DEM, range)
+
+#view coordinate reference system
+## NOTE THAT THIS IS DEPRACATED (error = Coordinate Reference System:
+## Deprecated Proj.4 representation: NA )
+DEM@crs
+
+DEM@extent
+```
+
+```{r}
+#| label: histogram-of-values-in-raster
+
+hist(DEM, main="Distribution of elevation values", 
+     col= "purple", 
+     maxpixels=22000000)
+```
+
+```{r}
+#| label: plot-raster-data
+# this is a small region of the SJER site
+
+plot(DEM, 
+		 main="Digital Elevation Model, SJER") # add title with main
+
+# create a plot of our raster using the image function - this does not have limited pixels like # plot, which is limited to 100,000
+image(DEM)
+
+# specify the range of values that you want to plot in the DEM
+# just plot pixels between 250 and 300 m in elevation
+image(DEM, zlim=c(250,300))
+
+# we can specify the colors too
+col <- terrain.colors(10)
+image(DEM, zlim=c(250,375), main="Digital Elevation Model (DEM)", col=col)
+```
+
+## Intro to Raster Data in R
+
+```{r}
+library(raster)
+library(sp)
+library(rgdal)
+library(here)
+```
+
+```{r}
+# load raster in an R object called 'DEM'
+DEM <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalTerrainModel" , "SJER2013_DTM.tif")))  
+
+# look at the raster attributes. 
+DEM
+
+# calculate and save the min and max values of the raster to the raster object
+DEM <- setMinMax(DEM)
+
+# view raster attributes
+DEM
+```
+
+```{r}
+#Get min and max cell values from raster
+#NOTE: this code may fail if the raster is too large
+cellStats(DEM, min)
+
+cellStats(DEM, max)
+
+cellStats(DEM, range)
+```
+
+```{r}
+#view coordinate reference system ### DEPRECATED COMMAND
+DEM@crs
+```
+
+```{r}
+# the distribution of values in the raster
+hist(DEM, main="Distribution of elevation values", 
+     col= "purple", 
+     maxpixels=22000000)
+```
+
+```{r}
+plot(DEM, 
+		 main="Digital Elevation Model, SJER") # add title with main
+
+# create a plot of our raster
+image(DEM)
+
+# specify the range of values that you want to plot in the DEM
+# just plot pixels between 250 and 300 m in elevation
+image(DEM, zlim=c(250,300))
+```
+
+```{r}
+# we can specify the colors too
+col <- rainbow(10)
+image(DEM, zlim=c(200,600), main="Digital Elevation Model (DEM)", col=col)
+```
+
+```{r}
+#| label: break-and-colorbars
+# add a color map with 5 colors
+col=terrain.colors(5)
+
+# add breaks to the colormap (6 breaks = 5 segments)
+brk <- c(250, 300, 350, 400, 450, 500)
+
+plot(DEM, col=col, breaks=brk, main="DEM with more breaks")
+
+## Customize the legend appearance
+# First, expand right side of clipping rectangle to make room for the legend
+# turn xpd off
+par(xpd = FALSE, mar=c(5.1, 4.1, 4.1, 4.5))
+
+# Second, plot w/ no legend
+plot(DEM, col=col, breaks=brk, main="DEM with a Custom (but flipped) Legend", legend = FALSE)
+
+# Third, turn xpd back on to force the legend to fit next to the plot.
+par(xpd = TRUE)
+
+# Fourth, add a legend - & make it appear outside of the plot
+legend(par()$usr[2], 4110600,
+        legend = c("lowest", "a bit higher", "middle ground", "higher yet", "highest"), 
+        fill = col)
+```
+
+```{r}
+# Expand right side of clipping rect to make room for the legend
+par(xpd = FALSE,mar=c(5.1, 4.1, 4.1, 4.5))
+#DEM with a custom legend
+plot(DEM, col=col, breaks=brk, main="DEM with a Custom Legend",legend = FALSE)
+#turn xpd back on to force the legend to fit next to the plot.
+par(xpd = TRUE)
+
+#add a legend - but make it appear outside of the plot
+legend( par()$usr[2], 4110600,
+        legend = c("Highest", "Higher yet", "Middle","A bit higher", "Lowest"), 
+        fill = rev(col))
+```
+
+```{r}
+#add a color map with 4 colors
+col=terrain.colors(4)
+#add breaks to the colormap (6 breaks = 5 segments)
+brk <- c(200, 300, 350, 400,500)
+plot(DEM, col=col, breaks=brk, main="DEM with fewer breaks")
+```
+
+```{r}
+#| label: basic-raster-math
+#multiple each pixel in the raster by 2
+DEM2 <- DEM * 2
+
+DEM2
+
+#plot the new DEM
+plot(DEM2, main="DEM with all values doubled")
+```
+
+```{r}
+#| label: cropping-rasters
+#plot the DEM
+plot(DEM)
+
+#Define the extent of the crop by clicking on the plot
+cropbox1 <- drawExtent() # now click on the upper left and then lower right corner for cropping
+
+#crop the raster, then plot the new cropped raster
+DEMcrop1 <- crop(DEM, cropbox1)
+
+#plot the cropped extent
+plot(DEMcrop1)
+
+```
+
+```{r}
+#| label: manually-cropping-rasters
+#define the crop extent
+cropbox2 <-c(255077.3,257158.6,4109614,4110934)
+#crop the raster
+DEMcrop2 <- crop(DEM, cropbox2)
+#plot cropped DEM
+plot(DEMcrop2)
+```
+
+Use what you've learned to open and plot a Digital Surface Model.
+
+-   Create an R object called `DSM` from the raster: `DigitalSurfaceModel/SJER2013_DSM.tif`.
+
+-   Convert the raster data from m to feet. What is that conversion again? Oh, right 1m = \~3.3ft.
+
+-   Plot the `DSM` in feet using a custom color map.
+
+-   Create numeric breaks that make sense given the distribution of the data. Hint, your breaks might represent `high elevation`, `medium elevation`, `low elevation`.
+
+```{r}
+#| label: challenge-digital-surface-model
+# load raster in an R object called 'DSM'
+DSM <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalSurfaceModel" , "SJER2013_DSM.tif")))  
+
+# look at the raster attributes. 
+DSM
+
+# convert from meters to feet
+DSM_ft <- DSM * 3.3
+
+DSM_ft
+
+# take a quick look
+plot(DSM_ft, main="Digital Surface Model, SJER") # add title with main
+
+
+#| label: break-and-colorbars
+# add a color map with 5 colors
+col=terrain.colors(3)
+
+# add breaks to the colormap (4 breaks = 3 segments)
+brk <- c(700, 1050, 1450, 1800)
+
+plot(DSM_ft, col=col, breaks=brk, main="DSM in feet")
+```
+
+## Image Raster Data in R
+
+```{r}
+#| label: load-tiffs
+# import tiffs
+band19 <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "band19.tif")))
+band34 <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "band34.tif")))
+band58 <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "band58.tif")))
+
+# View their attributes to check that they loaded correctly:
+band19
+band34
+band58
+```
+
+```{r}
+#| label: create-raster-stack
+rgbRaster <- stack(band19,band34,band58)
+
+# check attributes
+rgbRaster
+
+# plot stack
+plot(rgbRaster)
+```
+
+```{r}
+#| label: plot-rgb-raster
+plotRGB(rgbRaster,r=3,g=2,b=1, stretch = "lin")
+
+# view histogram of reflectance values for all rasters
+hist(rgbRaster)
+```
+
+```{r}
+#| label: crop-rasters
+
+# determine the desired extent
+rgbCrop <- c(256770.7,256959,4112140,4112284)
+
+# crop to desired extent
+rgbRaster_crop <- crop(rgbRaster, rgbCrop)
+
+# view cropped stack
+plot(rgbRaster_crop)
+
+plotRGB(rgbRaster_crop,r=3,g=2,b=1, stretch = "lin")
+```
+
+```{r}
+#| label: raster-brick
+
+# create raster brick
+rgbBrick <- brick(rgbRaster)
+
+# check attributes
+rgbBrick
+
+# view object size
+object.size(rgbBrick)
+
+object.size(rgbRaster)
+
+# view raster brick
+plotRGB(rgbBrick,r=3,g=2,b=1, stretch = "Lin")
+```
+
+```{r}
+#| label: write-GeoTIFF
+# Make a new stack in the order we want the data in 
+orderRGBstack <- stack(rgbRaster$band58,rgbRaster$band34,rgbRaster$band19)
+
+# write the geotiff
+# change overwrite=TRUE to FALSE if you want to make sure you don't overwrite your files!
+writeRaster(orderRGBstack,paste0((here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "rgbRaster.tif"))), "GTIFF", overwrite=TRUE)
+```
+
+```{r}
+#| label: import-multiband-image
+# import multi-band raster as stack
+multiRasterS <- stack(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "rgbRaster.tif"))) 
+
+# import multi-band raster direct to brick
+multiRasterB <- brick(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "RGB" , "rgbRaster.tif"))) 
+
+# view raster
+plot(multiRasterB)
+
+plotRGB(multiRasterB,r=1,g=2,b=3, stretch="lin")
+```
+
+## LiDAR Intro Series
+
+### Create a Canopy Height Model from lidar-derived Rasters in R
+
+```{r}
+library(here)
+library(raster)
+library(rgdal)
+```
+
+```{r}
+#| label: import-DSM
+dsm <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalSurfaceModel" , "SJER2013_DSM.tif"))) 
+
+# view info about the raster.
+dsm
+
+# plot the DSM
+plot(dsm, main="Lidar Digital Surface Model \n SJER, California")
+```
+
+```{r}
+#| label: import-DTM
+dtm <- raster(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "DigitalTerrainModel" , "SJER2013_DTM.tif"))) 
+
+plot(dtm, main="Lidar Digital Terrain Model \n SJER, California")
+
+```
+
+```{r}
+#| label: create-CHM
+
+# use raster math to create CHM
+chm <- dsm - dtm
+
+# view CHM attributes
+chm
+
+plot(chm, main="Lidar Canopy Height Model \n SJER, California")
+```
+
+```{r}
+#| label: change-chm-to-feet
+
+chm_ft <- chm*3.3
+
+plot(chm_ft, main="Lidar Canopy Height Model ft \n SJER, California")
+```
+
+canopyCalc \<- function(DTM, DSM) {
+
+return(DSM-DTM)
+
+}
+
+```{r}
+#| label: CHM_function
+# Create a function that subtracts one raster from another
+ 
+canopyCalc <- function(DTM, DSM) {
+  return(DSM-DTM)
+  }
+    
+# use the function to create the final CHM
+chm2 <- canopyCalc(dtm,dsm)
+chm2
+
+# or use the overlay function
+chm3 <- overlay(dtm,dsm,fun = canopyCalc) 
+chm3 
+
+plot(chm3, main="Lidar Canopy Height Model ft \n SJER, California")
+```
+
+### Extract values from a raster in R
+
+```{r}
+library(raster)
+library(sp)
+library(rgdal) 
+library(maptools)
+library(rgeos)
+library(tidyverse)
+library(here)
+
+```
+
+```{r}
+# import the centroid data and the vegetation structure data
+# this means all strings of letter coming in will remain character
+options(stringsAsFactors=FALSE)
+
+# read in plot centroids
+centroids <- read.csv(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "PlotCentroids" , "SJERPlotCentroids.csv"))) 
+str(centroids)
+
+# read in vegetation heights
+vegStr <- read.csv(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "VegetationData" , "D17_2013_vegStr.csv"))) 
+str(vegStr)
+```
+
+```{r}
+#| label: overlay-points-on-chm
+
+## overlay the centroid points and the stem locations on the CHM plot
+# plot the chm
+myCol <- terrain.colors(6)
+plot(chm,col=myCol, main="Plot & Tree Locations", breaks=c(-2,0,2,10,40))
+
+## plotting details: cex = point size, pch 0 = square
+# plot square around the centroid
+points(centroids$easting,centroids$northing, pch=0, cex = 2 )
+# plot location of each tree measured
+points(vegStr$easting,vegStr$northing, pch=19, cex=.5, col = 2)
+
+```
