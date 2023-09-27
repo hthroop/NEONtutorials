@@ -1728,4 +1728,93 @@ names(trip.temp)
 View(trip.temp$TAAT_30min)
 
 # tables can be extracted and saved locally at this point
+
+list2env(trip.temp, .GlobalEnv)
+
+```
+
+```{r}
+#| label: zipsByProduct
+
+zipsByProduct(dpID="DP1.00002.001", site="WREF", 
+              startdate="2019-04", enddate="2019-05",
+              package="basic", check.size=T)
+
+
+# pass to stackByTable
+stackByTable(filepath=here("filesToStack00002"))
+
+```
+
+```{r}
+zipsByProduct(dpID="DP1.00002.001", site="WREF", 
+              startdate="2019-04", enddate="2019-05",
+              package="basic", avg=30, check.size=T)
+```
+
+```{r}
+#| label: readTableNEON
+
+stackByTable(filepath=here("filesToStack00002"))
+SAAT30 <- readTableNEON(
+  dataFile=here("filesToStack00002", "stackedFiles", "SAAT_30min.csv"),
+  varFile=here("filesToStack00002", "stackedFiles", "variables_00002.csv"))
+
+```
+
+```{r}
+#| label: single-file-download
+
+getPackage("DP1.00002.001", site_code="HARV", 
+           year_month="2017-11", package="basic")
+```
+
+## NEONOS to remove duplicates
+
+```{r}
+library(neonUtilities)
+library(neonOS)
+library(ggplot2)
+```
+
+```{r}
+# get data
+apchem <- loadByProduct(dpID="DP1.20063.001", 
+                        site=c("PRLA","SUGG","TOOK"), 
+                        package="expanded",
+                        release="RELEASE-2022",
+                        check.size=F)
+# copy downloaded tables into R environment
+list2env(apchem, .GlobalEnv)
+```
+
+```{r}
+#| label: remove-duplicates
+
+apl_biomass <- removeDups(data=apl_biomass, 
+                          variables=variables_20063)
+
+#check flag
+unique(apl_biomass$duplicateRecordQF)
+
+apl_plantExternalLabDataPerSample <- removeDups(
+  data=apl_plantExternalLabDataPerSample, 
+  variables=variables_20063)
+```
+
+```{r}
+#| label: unresolved-duplicates
+
+apl_plantExternalLabDataPerSample[which(
+  apl_plantExternalLabDataPerSample$duplicateRecordQF==1),]
+
+apl_plantExternalLabDataPerSample[which(
+  apl_plantExternalLabDataPerSample$duplicateRecordQF==2),]
+```
+
+```{r}
+#| label: table-join
+aqbc <- joinTableNEON(apl_biomass,
+                      apl_plantExternalLabDataPerSample)
+
 ```
