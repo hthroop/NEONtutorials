@@ -1506,3 +1506,226 @@ centroid_spdf <- SpatialPointsDataFrame(
 # note SPDFs don't have a crs slot so `object@crs` won't work
 centroid_spdf
 ```
+
+```{r}
+#| label: extract-data-from-circular-buffer
+# extract circular, 20m buffer
+cent_max <- raster::extract(chm,             # raster layer
+	centroid_spdf,   # SPDF with centroids for buffer
+	buffer = 20,     # buffer size, units depend on CRS
+	fun=max,         # what to value to extract
+	df=TRUE)         # return a dataframe? 
+
+# view
+cent_max
+```
+
+```{r}
+# grab the names of the plots from the centroid_spdf
+cent_max$plot_id <- centroid_spdf$Plot_ID
+
+#fix the column names
+names(cent_max) <- c('ID','chmMaxHeight','plot_id')
+
+# view again - we have plot_ids
+cent_max
+
+# merge the chm data into the centroids data.frame
+centroids <- merge(centroids, cent_max, by.x = 'Plot_ID', by.y = 'plot_id')
+
+# have a look at the centroids dataFrame
+head(centroids)
+```
+
+```{r}
+#| label: histograms-from-extracted-data
+
+# extract all
+cent_heightList <- raster::extract(chm,centroid_spdf,buffer = 20)
+
+# create histograms for the first 5 plots of data
+# using a for loop
+
+for (i in 1:5) {
+  hist(cent_heightList[[i]], main=(paste("plot",i)))
+  }
+```
+
+```{r}
+#| label: extract-values-from-shapefile
+# load shapefile data
+centShape <- readOGR(paste0(here("NEONDSFieldSiteSpatialData", "SJER" , "PlotCentroids" , "SJERPlotCentroids_Buffer.shp"))) 
+
+plot(centShape)
+```
+
+```{r}
+# extract max from chm for shapefile buffers
+centroids$chmMaxShape <- raster::extract(chm, centShape, weights=FALSE, fun=max)
+
+# view
+head(centroids)
+```
+
+Extract summary data from ground measurements\
+Skipped the base R version
+
+```{r}
+# find the max stem height for each plot
+maxStemHeight_d <- vegStr |> 
+  group_by(plotid) |> 
+  summarise(max = max(stemheight))
+
+# view
+head(maxStemHeight_d)
+
+# fix names
+names(maxStemHeight_d) <- c("plotid","insituMaxHeight")
+head(maxStemHeight_d)
+```
+
+```{r}
+# one line of nested commands, 95% height value
+insitu_d <- vegStr |>
+	filter(plotid %in% centroids$Plot_ID) |> 
+	group_by(plotid) |> 
+	summarise(max = max(stemheight), quant = quantile(stemheight,.95))
+
+# view
+head(insitu_d)
+```
+
+```{r}
+#| label: merge-ground-and-LiDAR-data
+# merge the insitu data into the centroids data.frame
+centroids <- merge(centroids, insitu_d, by.x = 'Plot_ID', by.y = 'plotid')
+
+# view
+head(centroids)
+```
+
+```{r}
+# create plot
+
+ggplot(centroids,aes(x=chmMaxShape, y =insituMaxHeight )) + 
+  geom_abline(slope=1, intercept = 0, alpha=.5, lty=2)+ # plotting our "1:1" line
+  geom_point() + 
+  theme_bw() + 
+  ylab("Maximum measured height") + 
+  xlab("Maximum lidar pixel")
+```
+
+## NEON Data - getting started
+
+<https://www.neonscience.org/resources/learning-hub/tutorials/download-explore-neon-data>
+
+```{r}
+library(neonUtilities)
+library(neonOS)
+library(raster)
+library(here)
+options(stringsAsFactors=F)
+```
+
+```{r}
+#| label: stack-manually-downloaded-zip-files
+# unzips and stacks into a useable format
+stackByTable(here("NEON_par.zip"))
+```
+
+```{r}
+#| label: direct-download-and-load-to-R
+apchem <- loadByProduct(dpID="DP1.20063.001", 
+                  site=c("PRLA","SUGG","TOOK"), 
+                  package="expanded", check.size=T)
+names(apchem)
+View(apchem$apl_plantExternalLabDataPerSample)
+
+# extract elements to work with separately
+list2env(apchem, .GlobalEnv)
+
+```
+
+AOP data downloads
+
+```{r}
+#| label: byTileAOP
+byTileAOP("DP3.30015.001", site="WREF", year="2017", check.size = T,
+          easting=580000, northing=5075000, savepath=here())
+```
+
+Using IS data\
+Uses the PAR data downloaded earlier
+
+```{r}
+par30 <- readTableNEON(
+  dataFile= here("NEON_par","stackedFiles","PARPAR_30min.csv"), 
+  varFile= here("NEON_par","stackedFiles","variables_00024.csv"))
+
+View(par30)
+```
+
+```{r}
+parvar <- read.csv(here("NEON_par","stackedFiles","variables_00024.csv"))
+View(parvar)
+```
+
+```{r}
+par30plot <- par30 |>
+  filter(verticalPosition == "040") |>
+  ggplot(aes(x = startDateTime, y = PARMean)) +
+    geom_line()
+par30plot
+
+#plot(PARMean~startDateTime, 
+#     data=par30[which(par30$verticalPosition=="080"),],
+#     type="l")
+```
+
+```{r}
+boxplot(analyteConcentration~siteID, 
+        data=apl_plantExternalLabDataPerSample, 
+        subset=analyte=="d13C",
+        xlab="Site", ylab="d13C")
+```
+
+```{r}
+apct <- joinTableNEON(apl_biomass, 
+            apl_plantExternalLabDataPerSample)
+
+boxplot(analyteConcentration~scientificName, 
+        data=apct, subset=analyte=="d13C", 
+        xlab=NA, ylab="d13C", 
+        las=2, cex.axis=0.7)
+```
+
+AOP data - raster
+
+```{r}
+#| label: AOP-download
+chm1 <- raster(here("DP3.30015.001","neon-aop-products","2017","FullSite", "D16","2017_WREF_1","L3","DiscreteLidar","CanopyHeightModelGtif", "NEON_D16_WREF_DP3_580000_5075000_CHM.tif"))
+
+plot(chm1, col=topo.colors(6))
+```
+
+## NEON Utilities
+
+https://www.neonscience.org/resources/learning-hub/tutorials/neondatastackr
+
+```{r}
+library(here)
+library(neonUtilities)
+```
+
+```{r}
+#| label: loadByProduct
+trip.temp <- loadByProduct(dpID="DP1.00003.001", 
+                           site=c("MOAB","ONAQ"),
+                           startdate="2018-05", 
+                           enddate="2018-08")
+
+names(trip.temp)
+View(trip.temp$TAAT_30min)
+
+# tables can be extracted and saved locally at this point
+```
