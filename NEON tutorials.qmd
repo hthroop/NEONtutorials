@@ -1708,7 +1708,7 @@ chm1 <- raster(here("DP3.30015.001","neon-aop-products","2017","FullSite", "D16"
 plot(chm1, col=topo.colors(6))
 ```
 
-## NEON Utilities
+### NEON Utilities
 
 https://www.neonscience.org/resources/learning-hub/tutorials/neondatastackr
 
@@ -1769,7 +1769,7 @@ getPackage("DP1.00002.001", site_code="HARV",
            year_month="2017-11", package="basic")
 ```
 
-## NEONOS to remove duplicates
+### NEONOS to remove duplicates
 
 ```{r}
 library(neonUtilities)
@@ -1818,3 +1818,14 @@ aqbc <- joinTableNEON(apl_biomass,
                       apl_plantExternalLabDataPerSample)
 
 ```
+
+## Hyperspectral Data
+
+```{r}
+library(raster)
+library(rhdf5)
+library(rgdal)
+library(here)
+```
+
+The hyperspectral tutorials use spatial packages that are slated for retirement in a few days. I am not going to continue on with this ... will hope these get updated and I'll pick them up later.
